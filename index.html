@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OFN — Member Terminal</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <div id="bg">
+    <div class="grain"></div>
+    <div class="scanlines"></div>
+    <div class="glow"></div>
+  </div>
+
+  <main class="shell">
+
+    <header class="topbar">
+      <div class="brand">
+        <div class="sigil"></div>
+        <div>
+          <div class="brandTitle">Organisation of Free Nations</div>
+          <div class="brandSub">Secure Representative Terminal • OFN/RT-7</div>
+        </div>
+      </div>
+      <div class="statusPills">
+        <div class="pill" id="pillConn">LINK: <span class="muted">negotiating…</span></div>
+        <div class="pill" id="pillRole">ROLE: <span class="muted">unknown</span></div>
+        <div class="pill" id="pillCountry">ID: <span class="muted">unbound</span></div>
+      </div>
+    </header>
+
+    <section class="desktop">
+
+      <!-- LEFT: System dialog / onboarding -->
+      <aside class="panel dialog">
+        <div class="panelHeader">
+          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+          <div class="panelTitle">SYSTEM INTERFACE</div>
+        </div>
+
+        <div class="panelBody">
+          <div class="systemVoice" id="systemVoice">
+            <div class="voiceLine">…initializing secure session…</div>
+          </div>
+
+          <!-- Step 1: Password -->
+          <div class="card" id="cardAuth">
+            <div class="cardTitle">Authentication</div>
+            <div class="cardHint">
+              This terminal accepts pre-issued credentials only.
+              <span class="muted">No heroics. No guessing. I’m very petty about guessing.</span>
+            </div>
+
+            <label class="fieldLabel" for="pw">Access Phrase</label>
+            <div class="row">
+              <input id="pw" class="input" type="password" placeholder="Enter access phrase…" autocomplete="off" />
+              <button id="btnAuth" class="btn primary">Verify</button>
+            </div>
+
+            <div class="small muted">
+              Access tiers: Observer / Member / Presidency
+            </div>
+
+            <div class="error" id="authErr" hidden></div>
+          </div>
+
+          <!-- Step 2: Country selection (not for presidency) -->
+          <div class="card" id="cardIdentity" hidden>
+            <div class="cardTitle">Identity Binding</div>
+            <div class="cardHint" id="identityHint">
+              Hello Representative! May I know what country you are representing today?
+            </div>
+
+            <label class="fieldLabel" for="countrySelect">Country</label>
+            <div class="row">
+              <select id="countrySelect" class="input select"></select>
+              <button id="btnBind" class="btn primary">Bind</button>
+            </div>
+
+            <div class="error" id="bindErr" hidden></div>
+          </div>
+
+          <!-- Step 3: Enter terminal -->
+          <div class="card" id="cardEnter" hidden>
+            <div class="cardTitle">Session Ready</div>
+            <div class="cardHint">
+              Identity confirmed. Welcome to the voting floor.
+              <span class="muted">Try not to spill democracy on the carpet.</span>
+            </div>
+            <button id="btnEnter" class="btn primary wide">Enter Secure Desktop</button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- RIGHT: Voting Desktop -->
+      <section class="panel workspace" id="workspace" hidden>
+        <div class="panelHeader">
+          <div class="panelTitle">REPRESENTATIVE DESKTOP</div>
+          <div class="headerRight">
+            <div class="clock" id="clock">--:--:--</div>
+          </div>
+        </div>
+
+        <div class="panelBody grid">
+
+          <!-- Current Vote -->
+          <div class="tile vote">
+            <div class="tileHeader">
+              <div>
+                <div class="tileTitle">Active Resolution</div>
+                <div class="tileSub" id="voteSub">No active vote.</div>
+              </div>
+              <div class="timerBox">
+                <div class="timerLabel">Elapsed</div>
+                <div class="timerValue" id="elapsed">00:00</div>
+              </div>
+            </div>
+
+            <div class="resolutionBox">
+              <div class="resTitle" id="resTitle">—</div>
+              <div class="resSummary" id="resSummary">—</div>
+              <div class="resBody" id="resBody">Awaiting instructions.</div>
+            </div>
+
+            <div class="actionsRow" id="memberActions" hidden>
+              <button class="btn aye" id="btnAye">Aye</button>
+              <button class="btn nay" id="btnNay">Nay</button>
+              <button class="btn abstain" id="btnAbs">Abstain</button>
+              <div class="muted small" id="voteLockNote"></div>
+            </div>
+
+            <div class="actionsRow" id="observerActions" hidden>
+              <div class="muted small">
+                Observer access detected. You may monitor the proceedings.
+                <span class="muted">Touch nothing. Especially not history.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ledger -->
+          <div class="tile ledger">
+            <div class="tileHeader">
+              <div>
+                <div class="tileTitle">Vote Ledger</div>
+                <div class="tileSub" id="ledgerSub">Per-country status feed.</div>
+              </div>
+              <div class="counts">
+                <div class="count"><span class="k">Aye</span> <span class="v" id="cAye">0</span></div>
+                <div class="count"><span class="k">Nay</span> <span class="v" id="cNay">0</span></div>
+                <div class="count"><span class="k">Abst</span> <span class="v" id="cAbs">0</span></div>
+                <div class="count"><span class="k">Total</span> <span class="v" id="cTot">0</span></div>
+              </div>
+            </div>
+
+            <div class="ledgerList" id="ledgerList"></div>
+          </div>
+
+          <!-- Presidency Console -->
+          <div class="tile presidency" id="presidencyTile" hidden>
+            <div class="tileHeader">
+              <div>
+                <div class="tileTitle">Presidency Console</div>
+                <div class="tileSub">Compose, initiate, and terminate voting procedures.</div>
+              </div>
+              <div class="pill warn" id="voteStatePill">STATE: idle</div>
+            </div>
+
+            <label class="fieldLabel" for="pTitle">Resolution Title</label>
+            <input id="pTitle" class="input" placeholder="e.g. Resolution 12 — Maritime Security Cooperation" />
+
+            <label class="fieldLabel" for="pSummary">Short Informative Summary</label>
+            <textarea id="pSummary" class="input area" rows="2" placeholder="One or two lines. Clear. Surgical."></textarea>
+
+            <label class="fieldLabel" for="pBody">Resolution Text</label>
+            <textarea id="pBody" class="input area" rows="6" placeholder="Write the full resolution text here…"></textarea>
+
+            <div class="row gap">
+              <button class="btn primary" id="btnStart">Start Vote</button>
+              <button class="btn danger" id="btnEnd">End Vote</button>
+            </div>
+
+            <div class="error" id="presErr" hidden></div>
+            <div class="small muted">
+              Ending a vote posts results to Discord and locks further voting.
+            </div>
+          </div>
+
+          <!-- System Feed -->
+          <div class="tile feed">
+            <div class="tileHeader">
+              <div>
+                <div class="tileTitle">System Feed</div>
+                <div class="tileSub">Behavioral hints & procedural commentary.</div>
+              </div>
+            </div>
+            <div class="feedList" id="feedList"></div>
+          </div>
+
+        </div>
+      </section>
+
+    </section>
+
+    <footer class="bottombar">
+      <div class="muted small">OFN/RT-7 • Unauthorized access will be met with polite disappointment.</div>
+      <div class="muted small" id="buildInfo">build: local</div>
+    </footer>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
