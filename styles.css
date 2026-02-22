@@ -107,7 +107,7 @@ body{
   min-height:0;
 }
 
-/* AUTH MODE: center the onboarding, hide workspace */
+/* AUTH MODE: center onboarding, hide workspace */
 body.authMode .desktop{
   grid-template-columns: 1fr;
   align-items:start;
@@ -121,7 +121,7 @@ body.authMode .workspace{display:none}
 .panel{
   border:1px solid var(--border);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--panel), var(--panel2));
+  background: linear-gradient(180deg, rgba(255,255,255,.88), rgba(247,251,255,.88));
   box-shadow: var(--shadow);
   overflow:hidden;
   min-height:0;
@@ -162,11 +162,7 @@ body.authMode .workspace{display:none}
   padding:14px;
   margin-bottom:12px;
 }
-
-.card.hero{
-  padding:18px;
-}
-
+.card.hero{padding:18px}
 .cardTitle{font-weight:800; margin-bottom:8px}
 .cardHint{color:var(--muted); font-size:12px; margin-bottom:12px; line-height:1.4}
 
@@ -190,13 +186,8 @@ body.authMode .workspace{display:none}
 .select{appearance:none}
 .area{resize:vertical; min-height:80px}
 
-body.authMode #cardAuth .input{
-  font-size:18px;
-  padding:16px 14px;
-}
-body.authMode #cardAuth .btn{
-  padding:16px 14px;
-}
+body.authMode #cardAuth .input{font-size:18px; padding:16px 14px;}
+body.authMode #cardAuth .btn{padding:16px 14px;}
 
 .btn{
   border:1px solid rgba(12,27,58,.16);
@@ -242,7 +233,6 @@ body.authMode #cardAuth .btn{
   min-height:0;
 }
 
-/* Tiles should be flex columns so internal content can scroll */
 .tile{
   border:1px solid rgba(12,27,58,.10);
   background: rgba(255,255,255,.72);
@@ -320,25 +310,15 @@ body.authMode #cardAuth .btn{
 .choice.abstain{border-color: rgba(180,83,9,.22); background: rgba(180,83,9,.08)}
 .choice.none{border-color: rgba(12,27,58,.12); background: rgba(255,255,255,.75); color: var(--muted)}
 
-.feedList{
-  flex:1;
-  overflow:auto;
-  border-top:1px solid rgba(12,27,58,.08);
-  padding-top:10px;
-}
-.feedItem{
-  font-family:var(--mono);
-  font-size:12px;
-  padding:10px 8px;
-  border-bottom:1px solid rgba(12,27,58,.08);
-  color: var(--muted);
-}
-.feedItem strong{color: var(--text)}
+.repRow{margin-top:10px}
 
-/* Presidency: prevent Start/End buttons from being cut off */
-.tile.presidency textarea{
-  max-height: 180px;
+/* Presidency tile should take the removed feed space */
+.tile.presidency{
+  grid-column: 1 / -1; /* span both columns */
 }
+
+/* Keep Start/End accessible */
+.tile.presidency textarea{max-height: 240px;}
 .stickyActions{
   margin-top:auto;
   padding-top:12px;
@@ -347,4 +327,3 @@ body.authMode #cardAuth .btn{
   background: rgba(255,255,255,.92);
   backdrop-filter: blur(8px);
 }
-.repRow{margin-top:10px}
