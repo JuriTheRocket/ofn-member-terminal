@@ -293,10 +293,27 @@ export async function handler(event) {
     }
 
     if (action === "release_seat") {
-      if (role !== "member") return json(403, { error: "Release requires member role." });
-      const released = await releaseSession(supabase, ip);
-      return json(200, { ok: true, released });
-    }
+  if (role !== "member") return json(403, { error: "Release requires member role." });
+
+  // optional: verify seat session token if provided
+  const providedToken = cleanStr(body.seat_session_token, 200);
+  const providedSeat = Number(body.seat_id);
+
+  const session = await getSessionByIp(supabase, ip);
+  if (!session) return json(200, { ok: true, released: false });
+
+  // If client provided a token, require it to match.
+  if (providedToken && providedToken !== session.session_token) {
+    return json(403, { error: "Invalid seat session token." });
+  }
+  // If client provided a seat, ensure it matches the bound one (prevents weirdness).
+  if (Number.isFinite(providedSeat) && providedSeat > 0 && providedSeat !== session.seat_id) {
+    return json(403, { error: "Seat mismatch." });
+  }
+
+  const released = await releaseSession(supabase, ip);
+  return json(200, { ok: true, released });
+}
 
     if (action === "heartbeat") {
       if (role !== "member") return json(403, { error: "Heartbeat requires member role." });
@@ -438,3 +455,4 @@ export async function handler(event) {
     return json(500, { error: err?.message || "Server error." });
   }
 }
+
