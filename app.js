@@ -78,6 +78,9 @@ const state = {
   activeResolution: { status: "idle" },
   pollTimer: null,
   hbTimer: null,
+
+  // release-beacon guard
+  releasedViaBeacon: false,
 };
 
 function escapeHtml(s) {
@@ -141,6 +144,50 @@ async function api(action, payload = {}) {
   return data;
 }
 
+/**
+ * Best-effort immediate seat release on tab close/navigation.
+ * Uses sendBeacon when available, falls back to fetch keepalive.
+ *
+ * Note: browsers may not always deliver requests on shutdown, hence TTL fallback in backend.
+ */
+function beaconReleaseSeat() {
+  if (state.releasedViaBeacon) return;
+  if (state.role !== "member") return;
+  if (!state.token || !state.seatId || !state.seatSessionToken) return;
+
+  state.releasedViaBeacon = true;
+
+  const url = apiUrl("release_seat");
+  const payload = JSON.stringify({
+    token: state.token,
+    seat_id: state.seatId,
+    seat_session_token: state.seatSessionToken,
+    reason: "tab_closed",
+  });
+
+  try {
+    if (navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: "application/json" });
+      navigator.sendBeacon(url, blob);
+      return;
+    }
+  } catch {
+    // ignore
+  }
+
+  // fallback
+  try {
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
+}
+
 // ----- UI flow -----
 function showAuth() {
   setAuthMode(true);
@@ -197,6 +244,7 @@ async function handleAuth() {
   }
 
   state.token = pw;
+  state.releasedViaBeacon = false;
 
   speak("Verifying credentials…");
 
@@ -245,6 +293,7 @@ async function claimSeat() {
   const out = await api("claim_seat", { desired_seat_id: chosen });
   state.seatId = out.seatId;
   state.seatSessionToken = out.seatSessionToken;
+  state.releasedViaBeacon = false;
 
   setPill(ui.pillSeat, "SEAT", `Seat ${String(state.seatId).padStart(3, "0")}`);
 
@@ -258,7 +307,7 @@ async function claimSeat() {
   showEnter();
 }
 
-async function releaseSeat() {
+async function releaseSeatInteractive() {
   setError(ui.seatErr, "");
   try {
     const out = await api("release_seat", {});
@@ -302,7 +351,7 @@ function setActionsVisibility(r) {
   const isObserver = state.role === "observer";
   const isPres = state.role === "presidency";
 
-  ui.presidencyTile.hidden = !isPres; // server-authoritative role
+  ui.presidencyTile.hidden = !isPres;
   ui.memberActions.hidden = !isMember;
   ui.observerActions.hidden = !isObserver;
 
@@ -340,7 +389,6 @@ function setLedger(votes, seatCount) {
 
   let aye=0, nay=0, abs=0, cast=0;
 
-  // build counts + list only for seats that voted (nice & compact)
   const votedSeats = Object.keys(votes || {})
     .map(k => parseInt(k, 10))
     .filter(n => Number.isFinite(n))
@@ -370,7 +418,6 @@ function setLedger(votes, seatCount) {
   drawChamber(votes || {}, seatCount);
 }
 
-// Parliament chamber visualization (semi-circle-ish with rows)
 function drawChamber(votes, seatCount) {
   const canvas = ui.chamberCanvas;
   const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
@@ -383,7 +430,6 @@ function drawChamber(votes, seatCount) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, cssW, cssH);
 
-  // layout: multiple arcs
   const rows = Math.max(4, Math.min(10, Math.round(Math.sqrt(seatCount) / 1.2)));
   const seatRadius = Math.max(2, Math.min(5, Math.floor(cssW / 220)));
   const centerX = cssW / 2;
@@ -395,7 +441,6 @@ function drawChamber(votes, seatCount) {
   for (let r = 0; r < rows; r++) {
     if (remaining <= 0) break;
 
-    // allocate seats per row (more on outer rows)
     const rowSeats = Math.ceil((seatCount / rows) * (1 + r * 0.12));
     const n = Math.min(remaining, rowSeats);
     remaining -= n;
@@ -415,8 +460,7 @@ function drawChamber(votes, seatCount) {
       const choice = votes[String(seatIndex)] || "none";
       seatIndex++;
 
-      // choose color
-      let fill = "rgba(12,27,58,.18)";          // none
+      let fill = "rgba(12,27,58,.18)";
       if (choice === "aye") fill = "rgba(14,159,110,.65)";
       if (choice === "nay") fill = "rgba(225,29,72,.60)";
       if (choice === "abstain") fill = "rgba(180,83,9,.55)";
@@ -426,14 +470,12 @@ function drawChamber(votes, seatCount) {
       ctx.fillStyle = fill;
       ctx.fill();
 
-      // subtle outline
       ctx.lineWidth = 1;
       ctx.strokeStyle = "rgba(12,27,58,.10)";
       ctx.stroke();
     }
   }
 
-  // little legend (top-left)
   ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
   ctx.fillStyle = "rgba(75,98,143,.95)";
   ctx.fillText("AYE", 10, 16);
@@ -497,9 +539,7 @@ async function pollOnce() {
   setResolutionUI(state.activeResolution);
   setActionsVisibility(state.activeResolution);
 
-  const votes = data.votes || {};
-  setLedger(votes, state.seatCount);
-
+  setLedger(data.votes || {}, state.seatCount);
   updateElapsed(state.activeResolution);
 
   ui.ledgerSub.textContent =
@@ -521,10 +561,9 @@ async function heartbeat() {
   if (state.role !== "member") return;
   if (!state.seatId || !state.seatSessionToken) return;
   try {
-    const out = await api("heartbeat", {});
-    if (!out.ok) return;
+    await api("heartbeat", {});
   } catch {
-    // if seat session expires, we’ll just stop voting ability; user can re-claim
+    // if seat session expires, user can re-claim
   }
 }
 
@@ -545,6 +584,27 @@ function tickClock() {
 setInterval(tickClock, 500);
 tickClock();
 
+// ----- lifecycle hooks: release seat on close -----
+(function installLifecycleRelease() {
+  // pagehide is the most reliable cross-browser for tab close/navigation
+  window.addEventListener("pagehide", () => {
+    beaconReleaseSeat();
+  });
+
+  // If user backgrounds the tab, don’t release immediately (they might come back),
+  // but if it becomes hidden AND the page is being unloaded soon, pagehide will fire anyway.
+  // Still, some mobile browsers only fire visibilitychange.
+  document.addEventListener("visibilitychange", () => {
+    // If it goes hidden, we do NOT instantly release (that would be annoying).
+    // We rely on TTL + pagehide. So nothing here by default.
+  });
+
+  // last resort
+  window.addEventListener("beforeunload", () => {
+    beaconReleaseSeat();
+  });
+})();
+
 // ----- boot -----
 (function boot() {
   ui.buildInfo.textContent = `build: ${window.location.host}`;
@@ -559,7 +619,7 @@ tickClock();
   ui.pw.addEventListener("keydown", (e) => { if (e.key === "Enter") ui.btnAuth.click(); });
 
   ui.btnSeat.addEventListener("click", () => claimSeat().catch(e => setError(ui.seatErr, e.message)));
-  ui.btnRelease.addEventListener("click", () => releaseSeat().catch(e => setError(ui.seatErr, e.message)));
+  ui.btnRelease.addEventListener("click", () => releaseSeatInteractive().catch(e => setError(ui.seatErr, e.message)));
 
   ui.btnEnter.addEventListener("click", enterDesktop);
 
@@ -569,11 +629,6 @@ tickClock();
 
   ui.btnStart.addEventListener("click", startVote);
   ui.btnEnd.addEventListener("click", endVote);
-
-  window.addEventListener("resize", () => {
-    // redraw chamber at current votes
-    // (poll will redraw soon anyway)
-  });
 
   showAuth();
 })();
