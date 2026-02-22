@@ -1,7 +1,6 @@
 // OFN IRP — Client
 
 const CONFIG = {
-  // UI-side role detection (server also verifies using Netlify env vars)
   PASSWORDS: {
     observer: "OBSERVER-ACCESS-2026",
     member: "MEMBER-ACCESS-2026",
@@ -27,7 +26,6 @@ const CONFIG = {
   ],
 
   POLL_MS: 1500,
-  CLEAR_AFTER_CLOSE_MS: 6000,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -88,14 +86,13 @@ const ui = {
   btnEnd: $("btnEnd"),
   presErr: $("presErr"),
 
-  feedList: $("feedList"),
   buildInfo: $("buildInfo"),
 };
 
 const state = {
-  role: null,            // observer | member | presidency
-  country: null,         // string or null
-  representative: null,  // "Rep 1" ... for members
+  role: null,
+  country: null,
+  representative: null,
   token: null,
 
   activeResolution: null,
@@ -104,11 +101,9 @@ const state = {
   pollTimer: null,
   timeOffsetMs: 0,
 
-  clearTimeout: null,
   lastStatus: null,
 };
 
-// ---------- UI helpers ----------
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (m) => ({
     "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
@@ -121,13 +116,6 @@ function speak(line, emphasis = false) {
   div.innerHTML = emphasis ? `<strong>${escapeHtml(line)}</strong>` : escapeHtml(line);
   ui.systemVoice.appendChild(div);
   ui.systemVoice.scrollTop = ui.systemVoice.scrollHeight;
-}
-
-function feed(line, tag = "SYSTEM") {
-  const div = document.createElement("div");
-  div.className = "feedItem";
-  div.innerHTML = `<strong>${escapeHtml(tag)}</strong> — ${escapeHtml(line)}`;
-  ui.feedList.prepend(div);
 }
 
 function setPill(el, label, value) {
@@ -154,7 +142,6 @@ function setAuthMode(on) {
   document.body.classList.toggle("authMode", !!on);
 }
 
-// ---------- API ----------
 function apiUrl(action) {
   const u = new URL("/.netlify/functions/ofn", window.location.origin);
   u.searchParams.set("action", action);
@@ -168,21 +155,16 @@ async function api(action, payload = {}) {
     body: JSON.stringify({
       ...payload,
       token: state.token,
-      role: state.role,
       country: state.country,
       representative: state.representative,
     }),
   });
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg = data?.error || `Request failed (${res.status})`;
-    throw new Error(msg);
-  }
+  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
   return data;
 }
 
-// ---------- flows ----------
 function showAuth() {
   setAuthMode(true);
   ui.cardAuth.hidden = false;
@@ -214,11 +196,6 @@ function enterDesktop() {
   ui.cardIdentity.hidden = true;
   ui.cardEnter.hidden = true;
 
-  const who = state.role === "presidency"
-    ? "Presidency session"
-    : `${state.country}${state.role === "member" ? ` — ${state.representative}` : ""}`;
-
-  feed(`Entered platform as ${who}.`, "ACCESS");
   startPolling();
 }
 
@@ -232,7 +209,6 @@ function fillCountryList(list) {
   }
 }
 
-// ---------- auth ----------
 function detectRoleFromPassword(pw) {
   if (pw === CONFIG.PASSWORDS.observer) return "observer";
   if (pw === CONFIG.PASSWORDS.member) return "member";
@@ -248,7 +224,7 @@ async function handleAuth() {
   if (!role) {
     setError(ui.authErr, "Credential rejected. Try again carefully.");
     speak("Credential rejected. That phrase is not authorised.");
-    speak("If you keep guessing, I will start judging you louder.", true);
+    speak("I recommend fewer guesses and more accuracy.", true);
     return;
   }
 
@@ -262,21 +238,17 @@ async function handleAuth() {
 
   speak(`Credential accepted. Role: ${role.toUpperCase()}.`, true);
 
-  // Backend link check + time offset
   try {
     const ping = await api("ping", {});
     state.timeOffsetMs = (ping.serverNowMs - Date.now()) || 0;
     setPill(ui.pillConn, "LINK", "secure");
-    feed("Backend link established.", "LINK");
-  } catch (e) {
+  } catch {
     setPill(ui.pillConn, "LINK", "degraded");
-    feed("Backend link degraded — some actions may fail.", "LINK");
   }
 
   if (role === "presidency") {
     setPill(ui.pillCountry, "ID", "PRESIDENCY");
     speak("Presidency access does not require country binding.");
-    speak("Proceed when ready.");
     showEnter();
     return;
   }
@@ -314,32 +286,41 @@ function handleBind() {
     speak(`Identity bound: ${c}.`, true);
   }
 
-  speak("Proceed to the platform.");
   showEnter();
 }
 
-// ---------- resolution + ledger ----------
+function clearVoteUI() {
+  ui.resTitle.textContent = "—";
+  ui.resSummary.textContent = "—";
+  ui.resBody.textContent = "Awaiting instructions.";
+  ui.voteSub.textContent = "No active vote.";
+  ui.elapsed.textContent = "00:00";
+  ui.voteLockNote.textContent = "";
+
+  ui.ledgerList.innerHTML = "";
+  ui.cAye.textContent = "0";
+  ui.cNay.textContent = "0";
+  ui.cAbs.textContent = "0";
+  ui.cTot.textContent = "0";
+  ui.ledgerSub.textContent = "Per-country representative votes.";
+}
+
 function setResolutionUI(r) {
   if (!r || r.status === "idle") {
-    ui.resTitle.textContent = "—";
-    ui.resSummary.textContent = "—";
-    ui.resBody.textContent = "Awaiting instructions.";
-    ui.voteSub.textContent = "No active vote.";
-    ui.elapsed.textContent = "00:00";
-    ui.voteLockNote.textContent = "";
+    clearVoteUI();
     ui.voteStatePill.textContent = "STATE: idle";
     ui.voteStatePill.className = "pill warn";
     return;
   }
 
-  ui.resTitle.textContent = r.title || "Untitled Resolution";
-  ui.resSummary.textContent = r.summary || "No summary provided.";
+  ui.resTitle.textContent = r.title || "—";
+  ui.resSummary.textContent = r.summary || "—";
   ui.resBody.textContent = r.body || "";
 
   ui.voteSub.textContent =
     r.status === "open"
       ? "Voting is OPEN. Cast your position."
-      : "Voting is CLOSED. Awaiting publication.";
+      : "Voting is CLOSED.";
 
   ui.voteStatePill.textContent = `STATE: ${r.status}`;
   ui.voteStatePill.className = r.status === "open" ? "pill" : "pill warn";
@@ -352,6 +333,8 @@ function setActionsVisibility(r) {
 
   ui.observerActions.hidden = !isObserver;
   ui.memberActions.hidden = !isMember;
+
+  // ✅ Presidency console ONLY for presidency (and hidden otherwise)
   ui.presidencyTile.hidden = !isPres;
 
   const canVote = isMember && r && r.status === "open";
@@ -371,7 +354,7 @@ function setLedger(votesMap, countriesOrder) {
   let aye = 0, nay = 0, abs = 0, cast = 0;
 
   for (const country of countriesOrder) {
-    const entries = votesMap[country] || []; // [{rep, choice}...]
+    const entries = votesMap[country] || [];
 
     for (const e of entries) {
       cast++;
@@ -417,8 +400,6 @@ function updateElapsed(r) {
   }
 
   const startMs = new Date(r.started_at).getTime();
-
-  // If closed, freeze timer at ended_at (if present)
   const endMs =
     r.status === "closed"
       ? (r.ended_at ? new Date(r.ended_at).getTime() : nowMs())
@@ -427,16 +408,12 @@ function updateElapsed(r) {
   ui.elapsed.textContent = fmtElapsed(endMs - startMs);
 }
 
-// ---------- actions ----------
 async function cast(choice) {
   if (!state.activeResolution || state.activeResolution.status !== "open") return;
-
   try {
     await api("cast_vote", { choice });
-    feed(`Vote recorded: ${state.country} — ${state.representative} = ${choice.toUpperCase()}`, "VOTE");
     speak(`Vote received: ${state.representative} — ${choice.toUpperCase()}.`);
   } catch (e) {
-    feed(`Vote failed: ${e.message}`, "ERROR");
     speak(`Vote rejected: ${e.message}`, true);
   }
 }
@@ -453,13 +430,11 @@ async function startVote() {
   }
 
   try {
-    const out = await api("start_vote", { title, summary, body });
-    feed(`Vote initiated: ${out.resolutionId}`, "PRESIDENCY");
+    await api("start_vote", { title, summary, body });
     speak("Voting procedure initiated.", true);
-    speak("Delegations may now register their positions.");
   } catch (e) {
     setError(ui.presErr, e.message);
-    feed(`Start vote failed: ${e.message}`, "ERROR");
+    speak(`Start failed: ${e.message}`, true);
   }
 }
 
@@ -467,65 +442,26 @@ async function endVote() {
   setError(ui.presErr, "");
   try {
     const out = await api("end_vote", {});
-    feed(`Vote ended. Discord publication: ${out.discordPosted ? "YES" : "NO"}`, "PRESIDENCY");
     speak("Voting procedure terminated.", true);
     speak(out.discordPosted ? "Results transmitted." : "Transmission failed.");
   } catch (e) {
     setError(ui.presErr, e.message);
-    feed(`End vote failed: ${e.message}`, "ERROR");
+    speak(`End failed: ${e.message}`, true);
   }
 }
 
-// ---------- polling ----------
 async function pollOnce() {
   const data = await api("get_state", {});
   state.activeResolution = data.resolution || { status: "idle" };
 
   if (data.hello) setPill(ui.pillConn, "LINK", data.hello);
 
-  // announce new resolution
-  const rid = state.activeResolution?.id || null;
-  if (rid && rid !== state.lastResolutionId) {
-    state.lastResolutionId = rid;
-    speak("New resolution detected.", true);
-    speak(`Loaded: ${state.activeResolution.title || "Untitled"}`);
-    feed(`New resolution loaded: ${state.activeResolution.title || "Untitled"}`, "SYSTEM");
-  }
-  if (!rid) state.lastResolutionId = null;
-
-  // Detect status transition to CLOSED and schedule UI clear
+  // if vote just closed -> we immediately clear UI (since backend now blanks fields + votes)
   const curStatus = state.activeResolution?.status || "idle";
   if (state.lastStatus !== curStatus) {
     state.lastStatus = curStatus;
-
     if (curStatus === "closed") {
-      feed("Vote closed. Clearing resolution view shortly.", "SYSTEM");
-      speak("Vote closed. Stand by.", true);
-
-      if (!state.clearTimeout) {
-        state.clearTimeout = setTimeout(() => {
-          // only clear if still closed (avoid wiping a newly started vote)
-          if (state.activeResolution?.status === "closed") {
-            state.activeResolution = { status: "idle" };
-            setResolutionUI(state.activeResolution);
-            setActionsVisibility(state.activeResolution);
-
-            ui.ledgerList.innerHTML = "";
-            ui.cAye.textContent = "0";
-            ui.cNay.textContent = "0";
-            ui.cAbs.textContent = "0";
-            ui.cTot.textContent = "0";
-
-            feed("Resolution view cleared.", "SYSTEM");
-          }
-          state.clearTimeout = null;
-        }, CONFIG.CLEAR_AFTER_CLOSE_MS);
-      }
-    } else {
-      if (state.clearTimeout) {
-        clearTimeout(state.clearTimeout);
-        state.clearTimeout = null;
-      }
+      speak("Vote closed. Clearing live view.", true);
     }
   }
 
@@ -540,7 +476,7 @@ async function pollOnce() {
   ui.ledgerSub.textContent =
     state.activeResolution?.status === "open"
       ? "Live feed. Updates automatically."
-      : "Ledger locked to final state.";
+      : "No active vote.";
 }
 
 function startPolling() {
@@ -551,7 +487,6 @@ function startPolling() {
   }, CONFIG.POLL_MS);
 }
 
-// ---------- clock ----------
 function tickClock() {
   const d = new Date(nowMs());
   const hh = String(d.getHours()).padStart(2,"0");
@@ -562,7 +497,6 @@ function tickClock() {
 setInterval(tickClock, 500);
 tickClock();
 
-// ---------- boot ----------
 (function boot() {
   ui.buildInfo.textContent = `build: ${window.location.host}`;
   setPill(ui.pillConn, "LINK", "negotiating…");
