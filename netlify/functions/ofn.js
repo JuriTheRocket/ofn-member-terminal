@@ -5,9 +5,9 @@ function json(statusCode, body) {
     statusCode,
     headers: {
       "Content-Type": "application/json",
-      "Cache-Control": "no-store"
+      "Cache-Control": "no-store",
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   };
 }
 
@@ -67,16 +67,21 @@ async function getActiveResolution(supabase) {
   return r;
 }
 
+// returns: { [country]: [{rep, choice}, ...] }
 async function getVotesMap(supabase, resolutionId) {
   if (!resolutionId) return {};
   const { data, error } = await supabase
     .from("votes")
-    .select("country,choice")
+    .select("country, representative, choice")
     .eq("resolution_id", resolutionId);
 
   if (error) throw error;
+
   const map = {};
-  for (const v of data || []) map[v.country] = v.choice;
+  for (const v of data || []) {
+    if (!map[v.country]) map[v.country] = [];
+    map[v.country].push({ rep: v.representative, choice: v.choice });
+  }
   return map;
 }
 
@@ -94,7 +99,7 @@ async function postDiscord(webhookUrl, payload) {
   const res = await fetch(webhookUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
   return res.ok;
 }
@@ -105,19 +110,16 @@ export async function handler(event) {
     const body = event.body ? JSON.parse(event.body) : {};
 
     const token = cleanStr(body.token, 200);
-    const roleClient = cleanStr(body.role, 40);
     const country = cleanStr(body.country, 120);
+    const representative = cleanStr(body.representative, 40) || "Rep 1";
 
     const role = roleFromToken(token);
-    if (!role) {
-      return json(401, { error: "Unauthorized credential." });
-    }
+    if (!role) return json(401, { error: "Unauthorized credential." });
 
-    // Create Supabase client with service role key (server-only)
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const serviceKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const supabase = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false }
+      auth: { persistSession: false },
     });
 
     if (action === "ping") {
@@ -128,7 +130,6 @@ export async function handler(event) {
       const resolution = await getActiveResolution(supabase);
       const votes = await getVotesMap(supabase, resolution?.id);
 
-      // countriesOrder controls ledger display order
       const members = (process.env.MEMBER_COUNTRIES || "")
         .split("|").map(s => s.trim()).filter(Boolean);
       const observers = (process.env.OBSERVER_COUNTRIES || "")
@@ -141,7 +142,7 @@ export async function handler(event) {
         serverNowMs: Date.now(),
         resolution,
         votes,
-        countriesOrder
+        countriesOrder,
       });
     }
 
@@ -154,7 +155,7 @@ export async function handler(event) {
 
       if (!title || !resBody) return json(400, { error: "Missing title or resolution text." });
 
-      // Close any currently open vote first (hard safety)
+      // Close any currently open vote first
       const current = await getActiveResolution(supabase);
       if (current?.status === "open") {
         await setResolutionClosed(supabase, current.id);
@@ -165,7 +166,8 @@ export async function handler(event) {
         summary,
         body: resBody,
         status: "open",
-        started_at: new Date().toISOString()
+        started_at: new Date().toISOString(),
+        ended_at: null,
       };
 
       const { data, error } = await supabase
@@ -195,17 +197,18 @@ export async function handler(event) {
         return json(409, { error: "No open vote." });
       }
 
-      // Upsert one vote per country per resolution
       const upsert = {
         resolution_id: current.id,
         country,
+        representative,
         choice,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       };
 
+      // Requires the new constraint unique(resolution_id, country, representative)
       const { error } = await supabase
         .from("votes")
-        .upsert(upsert, { onConflict: "resolution_id,country" });
+        .upsert(upsert, { onConflict: "resolution_id,country,representative" });
 
       if (error) throw error;
 
@@ -219,33 +222,41 @@ export async function handler(event) {
       if (!current?.id) return json(409, { error: "No vote exists to end." });
       if (current.status !== "open") return json(409, { error: "Vote already closed." });
 
-      // Lock vote
       await setResolutionClosed(supabase, current.id);
 
-      // Get final votes
       const votes = await getVotesMap(supabase, current.id);
 
-      // Tally
-      let aye=0, nay=0, abs=0, tot=0;
-      const lines = [];
       const members = (process.env.MEMBER_COUNTRIES || "")
         .split("|").map(s => s.trim()).filter(Boolean);
 
+      // Tally
+      let aye = 0, nay = 0, abs = 0, cast = 0;
+      const lines = [];
+
       for (const c of members) {
-        const ch = votes[c] || "none";
-        if (ch !== "none") tot++;
-        if (ch === "aye") aye++;
-        if (ch === "nay") nay++;
-        if (ch === "abstain") abs++;
-        lines.push(`• ${c}: ${ch.toUpperCase()}`);
+        const entries = (votes[c] || []).slice().sort((a,b) => a.rep.localeCompare(b.rep));
+        if (entries.length === 0) {
+          lines.push(`• ${c}: NONE`);
+          continue;
+        }
+
+        for (const e of entries) {
+          cast++;
+          if (e.choice === "aye") aye++;
+          if (e.choice === "nay") nay++;
+          if (e.choice === "abstain") abs++;
+        }
+
+        const repLine = entries.map(e => `${e.rep}: ${e.choice.toUpperCase()}`).join(" • ");
+        lines.push(`• ${c}: ${repLine}`);
       }
 
       const content =
         `**OFN Vote Concluded**\n` +
         `**${current.title || "Untitled Resolution"}**\n` +
         (current.summary ? `_${current.summary}_\n` : "") +
-        `\n**Result** — Aye: **${aye}**, Nay: **${nay}**, Abstain: **${abs}**, Cast: **${tot}** / ${members.length}\n` +
-        `\n**Ledger**\n` + lines.join("\n");
+        `\n**Result** — Aye: **${aye}**, Nay: **${nay}**, Abstain: **${abs}**, Cast: **${cast}**\n` +
+        `\n**Ledger**\n${lines.join("\n")}`;
 
       const discordWebhook = process.env.DISCORD_WEBHOOK_URL || "";
       const discordPosted = await postDiscord(discordWebhook, { content });
@@ -254,7 +265,6 @@ export async function handler(event) {
     }
 
     return json(400, { error: "Unknown action." });
-
   } catch (err) {
     return json(500, { error: err?.message || "Server error." });
   }
