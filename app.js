@@ -100,6 +100,8 @@ const state = {
   timeOffsetMs: 0, // server time offset if provided
 };
 
+state.clearTimeout = null;
+
 // ---------- System voice ----------
 function speak(line, emphasis = false) {
   const div = document.createElement("div");
@@ -360,8 +362,15 @@ function updateElapsed(r) {
     ui.elapsed.textContent = "00:00";
     return;
   }
+
   const startMs = new Date(r.started_at).getTime();
-  ui.elapsed.textContent = fmtElapsed(nowMs() - startMs);
+
+  // If closed, freeze at ended_at (if available), otherwise freeze at "now"
+  const endMs = r.status === "closed"
+    ? (r.ended_at ? new Date(r.ended_at).getTime() : nowMs())
+    : nowMs();
+
+  ui.elapsed.textContent = fmtElapsed(endMs - startMs);
 }
 
 // ---------- Actions ----------
@@ -374,6 +383,32 @@ async function cast(choice) {
   } catch (e) {
     feed(`Vote failed: ${e.message}`, "ERROR");
     speak(`Vote rejected: ${e.message}`, true);
+  }
+}
+
+// If vote just transitioned to closed, schedule UI clear
+if (state.activeResolution?.status === "closed") {
+  if (!state.clearTimeout) {
+    state.clearTimeout = setTimeout(() => {
+      // Only clear if still closed (avoid clearing a new vote)
+      if (state.activeResolution?.status === "closed") {
+        state.activeResolution = { status: "idle" };
+        setResolutionUI(state.activeResolution);
+        setActionsVisibility(state.activeResolution);
+        ui.ledgerList.innerHTML = "";
+        ui.cAye.textContent = "0";
+        ui.cNay.textContent = "0";
+        ui.cAbs.textContent = "0";
+        ui.cTot.textContent = "0";
+        feed("Vote concluded. Resolution view cleared.", "SYSTEM");
+      }
+      state.clearTimeout = null;
+    }, 6000);
+  }
+} else {
+  if (state.clearTimeout) {
+    clearTimeout(state.clearTimeout);
+    state.clearTimeout = null;
   }
 }
 
@@ -490,4 +525,5 @@ tickClock();
   ui.btnEnd.addEventListener("click", endVote);
 
   showAuth();
+
 })();
