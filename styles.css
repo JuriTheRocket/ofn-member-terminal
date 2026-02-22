@@ -8,13 +8,10 @@
   --good:#0e9f6e;
   --bad:#e11d48;
   --warn:#b45309;
-
   --accent:#1e4fb8;
   --accent2:#2f8cff;
-
   --shadow: 0 18px 60px rgba(12,27,58,.12);
   --radius:18px;
-
   --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
 }
@@ -281,6 +278,21 @@ body.authMode #cardAuth .btn{padding:16px 14px;}
 .count .k{color:var(--muted); margin-right:6px}
 .count .v{font-weight:900}
 
+.chamberWrap{
+  border:1px solid rgba(12,27,58,.08);
+  background: rgba(255,255,255,.90);
+  border-radius: 14px;
+  padding:10px;
+  margin-bottom:10px;
+}
+#chamberCanvas{
+  width: 100%;
+  height: 220px;
+  display:block;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(47,140,255,.06), rgba(255,255,255,.0));
+}
+
 .ledgerList{
   flex:1;
   overflow:auto;
@@ -289,13 +301,12 @@ body.authMode #cardAuth .btn{padding:16px 14px;}
   margin-top:10px;
 }
 .ledgerRow{
-  display:flex; align-items:flex-start; justify-content:space-between;
+  display:flex; align-items:center; justify-content:space-between;
   padding:10px 8px;
   border-bottom:1px solid rgba(12,27,58,.08);
   gap:10px;
 }
-.country{font-weight:850}
-
+.seatLabel{font-weight:850; font-family:var(--mono)}
 .choice{
   font-family:var(--mono);
   font-size:12px;
@@ -310,15 +321,10 @@ body.authMode #cardAuth .btn{padding:16px 14px;}
 .choice.abstain{border-color: rgba(180,83,9,.22); background: rgba(180,83,9,.08)}
 .choice.none{border-color: rgba(12,27,58,.12); background: rgba(255,255,255,.75); color: var(--muted)}
 
-.repRow{margin-top:10px}
-
-/* Presidency tile should take the removed feed space */
 .tile.presidency{
-  grid-column: 1 / -1; /* span both columns */
+  grid-column: 1 / -1;
 }
-
-/* Keep Start/End accessible */
-.tile.presidency textarea{max-height: 240px;}
+.tile.presidency textarea{max-height: 320px;}
 .stickyActions{
   margin-top:auto;
   padding-top:12px;
@@ -327,3 +333,6 @@ body.authMode #cardAuth .btn{padding:16px 14px;}
   background: rgba(255,255,255,.92);
   backdrop-filter: blur(8px);
 }
+
+/* hard-hide */
+#presidencyTile[hidden]{ display:none !important; }
