@@ -225,6 +225,25 @@ body{
 .timerLabel{font-family:var(--mono); font-size:11px; color:var(--muted)}
 .timerValue{font-family:var(--mono); font-weight:800; letter-spacing:.6px}
 
+/* Make tiles behave nicely with internal scrolling */
+.tile { display: flex; flex-direction: column; min-height: 0; }
+.tile > * { min-height: 0; }
+
+/* Presidency tile: keep controls visible */
+.tile.presidency .row.gap {
+  margin-top: auto;            /* pushes buttons to bottom */
+  padding-top: 12px;
+  position: sticky;
+  bottom: 0;
+  background: rgba(255,255,255,.65);
+  backdrop-filter: blur(6px);
+}
+
+/* Let large textareas scroll within the tile instead of pushing buttons off-screen */
+.tile.presidency textarea {
+  max-height: 180px;
+}
+
 .resolutionBox{
   border:1px solid rgba(255,255,255,.09);
   background: rgba(0,0,0,.20);
@@ -282,4 +301,5 @@ body{
   border-bottom:1px solid rgba(255,255,255,.06);
   color: var(--muted);
 }
+
 .feedItem strong{color: var(--text)}
