@@ -1,31 +1,8 @@
-// OFN IRP — Client
+// OFN IRP — Client (Tier B: one seat per IP session, server authoritative role)
 
 const CONFIG = {
-  PASSWORDS: {
-    observer: "OBSERVER-ACCESS-2026",
-    member: "MEMBER-ACCESS-2026",
-    presidency: "PRESIDENCY-ACCESS-2026",
-  },
-
-  MEMBER_COUNTRIES: [
-    "Falklands",
-    "United States of America",
-    "Philippines",
-    "Union of Columbia",
-    "Brazil",
-    "Australia",
-    "Ireland",
-    "Grand Duchy of Luxembourg",
-  ],
-
-  OBSERVER_COUNTRIES: [
-    "Switzerland (Observer)",
-    "Japan (Observer)",
-    "Sweden (Observer)",
-    "New Zealand (Observer)",
-  ],
-
   POLL_MS: 1500,
+  HEARTBEAT_MS: 25000,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -33,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 const ui = {
   pillConn: $("pillConn"),
   pillRole: $("pillRole"),
-  pillCountry: $("pillCountry"),
+  pillSeat: $("pillSeat"),
 
   systemVoice: $("systemVoice"),
 
@@ -42,14 +19,13 @@ const ui = {
   btnAuth: $("btnAuth"),
   authErr: $("authErr"),
 
-  cardIdentity: $("cardIdentity"),
-  identityHint: $("identityHint"),
-  countrySelect: $("countrySelect"),
-  btnBind: $("btnBind"),
-  bindErr: $("bindErr"),
-
-  repRow: $("repRow"),
-  repSelect: $("repSelect"),
+  cardSeat: $("cardSeat"),
+  seatHint: $("seatHint"),
+  seatSelect: $("seatSelect"),
+  seatMeta: $("seatMeta"),
+  btnSeat: $("btnSeat"),
+  btnRelease: $("btnRelease"),
+  seatErr: $("seatErr"),
 
   cardEnter: $("cardEnter"),
   btnEnter: $("btnEnter"),
@@ -77,6 +53,8 @@ const ui = {
   cAbs: $("cAbs"),
   cTot: $("cTot"),
 
+  chamberCanvas: $("chamberCanvas"),
+
   presidencyTile: $("presidencyTile"),
   voteStatePill: $("voteStatePill"),
   pTitle: $("pTitle"),
@@ -90,18 +68,16 @@ const ui = {
 };
 
 const state = {
-  role: null,
-  country: null,
-  representative: null,
   token: null,
-
-  activeResolution: null,
-  lastResolutionId: null,
-
-  pollTimer: null,
+  role: null,             // set by server
+  seatId: null,           // integer for members
+  seatSessionToken: null, // returned by server
   timeOffsetMs: 0,
 
-  lastStatus: null,
+  seatCount: 0,
+  activeResolution: { status: "idle" },
+  pollTimer: null,
+  hbTimer: null,
 };
 
 function escapeHtml(s) {
@@ -127,15 +103,15 @@ function setError(el, msg) {
   if (msg) el.textContent = msg;
 }
 
+function nowMs() {
+  return Date.now() + state.timeOffsetMs;
+}
+
 function fmtElapsed(ms) {
   const t = Math.max(0, Math.floor(ms / 1000));
   const m = String(Math.floor(t / 60)).padStart(2, "0");
   const s = String(t % 60).padStart(2, "0");
   return `${m}:${s}`;
-}
-
-function nowMs() {
-  return Date.now() + state.timeOffsetMs;
 }
 
 function setAuthMode(on) {
@@ -153,10 +129,10 @@ async function api(action, payload = {}) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      ...payload,
       token: state.token,
-      country: state.country,
-      representative: state.representative,
+      seat_id: state.seatId,
+      seat_session_token: state.seatSessionToken,
+      ...payload,
     }),
   });
 
@@ -165,18 +141,19 @@ async function api(action, payload = {}) {
   return data;
 }
 
+// ----- UI flow -----
 function showAuth() {
   setAuthMode(true);
   ui.cardAuth.hidden = false;
-  ui.cardIdentity.hidden = true;
+  ui.cardSeat.hidden = true;
   ui.cardEnter.hidden = true;
   ui.workspace.hidden = true;
 }
 
-function showIdentity() {
+function showSeat() {
   setAuthMode(true);
   ui.cardAuth.hidden = true;
-  ui.cardIdentity.hidden = false;
+  ui.cardSeat.hidden = false;
   ui.cardEnter.hidden = true;
   ui.workspace.hidden = true;
 }
@@ -184,7 +161,7 @@ function showIdentity() {
 function showEnter() {
   setAuthMode(true);
   ui.cardAuth.hidden = true;
-  ui.cardIdentity.hidden = true;
+  ui.cardSeat.hidden = true;
   ui.cardEnter.hidden = false;
   ui.workspace.hidden = true;
 }
@@ -193,121 +170,115 @@ function enterDesktop() {
   setAuthMode(false);
   ui.workspace.hidden = false;
   ui.cardAuth.hidden = true;
-  ui.cardIdentity.hidden = true;
+  ui.cardSeat.hidden = true;
   ui.cardEnter.hidden = true;
 
   startPolling();
+  startHeartbeat();
 }
 
-function fillCountryList(list) {
-  ui.countrySelect.innerHTML = "";
-  for (const c of list) {
+// ----- Seat select -----
+function fillSeatList(count) {
+  ui.seatSelect.innerHTML = "";
+  for (let i = 1; i <= count; i++) {
     const opt = document.createElement("option");
-    opt.value = c;
-    opt.textContent = c;
-    ui.countrySelect.appendChild(opt);
+    opt.value = String(i);
+    opt.textContent = `Seat ${String(i).padStart(3, "0")}`;
+    ui.seatSelect.appendChild(opt);
   }
-}
-
-function detectRoleFromPassword(pw) {
-  if (pw === CONFIG.PASSWORDS.observer) return "observer";
-  if (pw === CONFIG.PASSWORDS.member) return "member";
-  if (pw === CONFIG.PASSWORDS.presidency) return "presidency";
-  return null;
 }
 
 async function handleAuth() {
   setError(ui.authErr, "");
   const pw = ui.pw.value.trim();
-  const role = detectRoleFromPassword(pw);
-
-  if (!role) {
-    setError(ui.authErr, "Credential rejected. Try again carefully.");
-    speak("Credential rejected. That phrase is not authorised.");
-    speak("I recommend fewer guesses and more accuracy.", true);
+  if (!pw) {
+    setError(ui.authErr, "Enter an access phrase.");
     return;
   }
 
-  state.role = role;
   state.token = pw;
-  state.country = null;
-  state.representative = null;
 
-  setPill(ui.pillRole, "ROLE", role.toUpperCase());
-  setPill(ui.pillCountry, "ID", "unbound");
+  speak("Verifying credentials…");
 
-  speak(`Credential accepted. Role: ${role.toUpperCase()}.`, true);
+  const ping = await api("ping", {});
+  state.role = ping.role;
+  state.timeOffsetMs = (ping.serverNowMs - Date.now()) || 0;
+  state.seatCount = ping.seatCount || 0;
 
-  try {
-    const ping = await api("ping", {});
-    state.timeOffsetMs = (ping.serverNowMs - Date.now()) || 0;
-    setPill(ui.pillConn, "LINK", "secure");
-  } catch {
-    setPill(ui.pillConn, "LINK", "degraded");
-  }
+  setPill(ui.pillConn, "LINK", "secure");
+  setPill(ui.pillRole, "ROLE", state.role.toUpperCase());
 
-  if (role === "presidency") {
-    setPill(ui.pillCountry, "ID", "PRESIDENCY");
-    speak("Presidency access does not require country binding.");
+  if (state.role === "presidency") {
+    state.seatId = null;
+    state.seatSessionToken = null;
+    setPill(ui.pillSeat, "SEAT", "—");
+    speak("Presidency access confirmed.", true);
     showEnter();
     return;
   }
 
-  if (role === "member") {
-    ui.identityHint.textContent = "Hello Representative! May I know what country you are representing today?";
-    fillCountryList(CONFIG.MEMBER_COUNTRIES);
-    ui.repRow.hidden = false;
-  } else {
-    ui.identityHint.textContent = "Observer access confirmed. Please declare your observer delegation for this session.";
-    fillCountryList(CONFIG.OBSERVER_COUNTRIES);
-    ui.repRow.hidden = true;
-  }
-
-  showIdentity();
-}
-
-function handleBind() {
-  setError(ui.bindErr, "");
-  const c = ui.countrySelect.value;
-  if (!c) {
-    setError(ui.bindErr, "Select a delegation to bind.");
+  if (state.role === "observer") {
+    state.seatId = null;
+    state.seatSessionToken = null;
+    setPill(ui.pillSeat, "SEAT", "—");
+    speak("Observer access confirmed. Monitoring only.", true);
+    showEnter();
     return;
   }
 
-  state.country = c;
+  // member
+  speak("Member access confirmed.", true);
+  speak("Please bind to a seat for this session.");
+  fillSeatList(state.seatCount);
+  ui.seatMeta.textContent = `Seats available: ${state.seatCount}`;
+  showSeat();
+}
 
-  if (state.role === "member") {
-    state.representative = ui.repSelect?.value || "Rep 1";
-    setPill(ui.pillCountry, "ID", `${c} — ${state.representative}`);
-    speak(`Identity bound: ${c} (${state.representative}).`, true);
+async function claimSeat() {
+  setError(ui.seatErr, "");
+  const chosen = parseInt(ui.seatSelect.value, 10);
+  if (!chosen || chosen < 1) {
+    setError(ui.seatErr, "Select a seat.");
+    return;
+  }
+
+  const out = await api("claim_seat", { desired_seat_id: chosen });
+  state.seatId = out.seatId;
+  state.seatSessionToken = out.seatSessionToken;
+
+  setPill(ui.pillSeat, "SEAT", `Seat ${String(state.seatId).padStart(3, "0")}`);
+
+  if (out.alreadyBound) {
+    speak(`Your connection already holds Seat ${String(out.seatId).padStart(3, "0")}.`, true);
+    speak("If you need a different seat, release first.");
   } else {
-    state.representative = null;
-    setPill(ui.pillCountry, "ID", c);
-    speak(`Identity bound: ${c}.`, true);
+    speak(`Seat claimed: Seat ${String(out.seatId).padStart(3, "0")}.`, true);
   }
 
   showEnter();
 }
 
-function clearVoteUI() {
-  ui.resTitle.textContent = "—";
-  ui.resSummary.textContent = "—";
-  ui.resBody.textContent = "Awaiting instructions.";
-  ui.voteSub.textContent = "No active vote.";
-  ui.elapsed.textContent = "00:00";
-  ui.voteLockNote.textContent = "";
-
-  ui.ledgerList.innerHTML = "";
-  ui.cAye.textContent = "0";
-  ui.cNay.textContent = "0";
-  ui.cAbs.textContent = "0";
-  ui.cTot.textContent = "0";
-  ui.ledgerSub.textContent = "Per-country representative votes.";
+async function releaseSeat() {
+  setError(ui.seatErr, "");
+  try {
+    const out = await api("release_seat", {});
+    state.seatId = null;
+    state.seatSessionToken = null;
+    setPill(ui.pillSeat, "SEAT", "unbound");
+    speak(out.released ? "Seat released." : "No active seat to release.");
+  } catch (e) {
+    setError(ui.seatErr, e.message);
+  }
 }
 
+// ----- Voting UI -----
 function setResolutionUI(r) {
   if (!r || r.status === "idle") {
-    clearVoteUI();
+    ui.resTitle.textContent = "—";
+    ui.resSummary.textContent = "—";
+    ui.resBody.textContent = "Awaiting instructions.";
+    ui.voteSub.textContent = "No active vote.";
+    ui.elapsed.textContent = "00:00";
     ui.voteStatePill.textContent = "STATE: idle";
     ui.voteStatePill.className = "pill warn";
     return;
@@ -327,70 +298,26 @@ function setResolutionUI(r) {
 }
 
 function setActionsVisibility(r) {
-  const isObserver = state.role === "observer";
   const isMember = state.role === "member";
+  const isObserver = state.role === "observer";
   const isPres = state.role === "presidency";
 
-  ui.observerActions.hidden = !isObserver;
+  ui.presidencyTile.hidden = !isPres; // server-authoritative role
   ui.memberActions.hidden = !isMember;
+  ui.observerActions.hidden = !isObserver;
 
-  // ✅ Presidency console ONLY for presidency (and hidden otherwise)
-  ui.presidencyTile.hidden = !isPres;
-
-  const canVote = isMember && r && r.status === "open";
+  const canVote = isMember && state.seatId && state.seatSessionToken && r && r.status === "open";
   ui.btnAye.disabled = !canVote;
   ui.btnNay.disabled = !canVote;
   ui.btnAbs.disabled = !canVote;
 
   if (isMember) {
-    const id = `${state.country} — ${state.representative || "Rep 1"}`;
-    ui.voteLockNote.textContent = canVote ? `Voting as: ${id}` : "Voting is not currently open.";
+    ui.voteLockNote.textContent = canVote
+      ? `Voting as: Seat ${String(state.seatId).padStart(3, "0")}`
+      : "Voting is not currently open, or your seat is not bound.";
+  } else {
+    ui.voteLockNote.textContent = "";
   }
-}
-
-function setLedger(votesMap, countriesOrder) {
-  ui.ledgerList.innerHTML = "";
-
-  let aye = 0, nay = 0, abs = 0, cast = 0;
-
-  for (const country of countriesOrder) {
-    const entries = votesMap[country] || [];
-
-    for (const e of entries) {
-      cast++;
-      if (e.choice === "aye") aye++;
-      if (e.choice === "nay") nay++;
-      if (e.choice === "abstain") abs++;
-    }
-
-    const row = document.createElement("div");
-    row.className = "ledgerRow";
-
-    if (entries.length === 0) {
-      row.innerHTML = `
-        <div class="country">${escapeHtml(country)}</div>
-        <div class="choice none">NONE</div>
-      `;
-    } else {
-      const chips = entries
-        .slice()
-        .sort((a,b) => a.rep.localeCompare(b.rep))
-        .map(e => `<span class="choice ${escapeHtml(e.choice)}">${escapeHtml(e.rep)}: ${escapeHtml(e.choice.toUpperCase())}</span>`)
-        .join(" ");
-
-      row.innerHTML = `
-        <div class="country">${escapeHtml(country)}</div>
-        <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end">${chips}</div>
-      `;
-    }
-
-    ui.ledgerList.appendChild(row);
-  }
-
-  ui.cAye.textContent = String(aye);
-  ui.cNay.textContent = String(nay);
-  ui.cAbs.textContent = String(abs);
-  ui.cTot.textContent = String(cast);
 }
 
 function updateElapsed(r) {
@@ -398,7 +325,6 @@ function updateElapsed(r) {
     ui.elapsed.textContent = "00:00";
     return;
   }
-
   const startMs = new Date(r.started_at).getTime();
   const endMs =
     r.status === "closed"
@@ -408,11 +334,125 @@ function updateElapsed(r) {
   ui.elapsed.textContent = fmtElapsed(endMs - startMs);
 }
 
+// votes: { [seatId]: "aye"|"nay"|"abstain" }
+function setLedger(votes, seatCount) {
+  ui.ledgerList.innerHTML = "";
+
+  let aye=0, nay=0, abs=0, cast=0;
+
+  // build counts + list only for seats that voted (nice & compact)
+  const votedSeats = Object.keys(votes || {})
+    .map(k => parseInt(k, 10))
+    .filter(n => Number.isFinite(n))
+    .sort((a,b)=>a-b);
+
+  for (const seatId of votedSeats) {
+    const choice = votes[String(seatId)] || "none";
+    if (choice !== "none") cast++;
+    if (choice === "aye") aye++;
+    if (choice === "nay") nay++;
+    if (choice === "abstain") abs++;
+
+    const row = document.createElement("div");
+    row.className = "ledgerRow";
+    row.innerHTML = `
+      <div class="seatLabel">Seat ${String(seatId).padStart(3,"0")}</div>
+      <div class="choice ${escapeHtml(choice)}">${escapeHtml(choice.toUpperCase())}</div>
+    `;
+    ui.ledgerList.appendChild(row);
+  }
+
+  ui.cAye.textContent = String(aye);
+  ui.cNay.textContent = String(nay);
+  ui.cAbs.textContent = String(abs);
+  ui.cTot.textContent = String(cast);
+
+  drawChamber(votes || {}, seatCount);
+}
+
+// Parliament chamber visualization (semi-circle-ish with rows)
+function drawChamber(votes, seatCount) {
+  const canvas = ui.chamberCanvas;
+  const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+  const cssW = canvas.clientWidth || 900;
+  const cssH = canvas.clientHeight || 220;
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  // layout: multiple arcs
+  const rows = Math.max(4, Math.min(10, Math.round(Math.sqrt(seatCount) / 1.2)));
+  const seatRadius = Math.max(2, Math.min(5, Math.floor(cssW / 220)));
+  const centerX = cssW / 2;
+  const baseY = cssH * 0.92;
+
+  let remaining = seatCount;
+  let seatIndex = 1;
+
+  for (let r = 0; r < rows; r++) {
+    if (remaining <= 0) break;
+
+    // allocate seats per row (more on outer rows)
+    const rowSeats = Math.ceil((seatCount / rows) * (1 + r * 0.12));
+    const n = Math.min(remaining, rowSeats);
+    remaining -= n;
+
+    const radius = (cssH * 0.18) + r * (seatRadius * 3.3);
+    const startAng = Math.PI * 1.05;
+    const endAng = Math.PI * 1.95;
+    const span = endAng - startAng;
+
+    for (let i = 0; i < n; i++) {
+      const t = n === 1 ? 0.5 : i / (n - 1);
+      const ang = startAng + span * t;
+
+      const x = centerX + Math.cos(ang) * radius;
+      const y = baseY + Math.sin(ang) * radius;
+
+      const choice = votes[String(seatIndex)] || "none";
+      seatIndex++;
+
+      // choose color
+      let fill = "rgba(12,27,58,.18)";          // none
+      if (choice === "aye") fill = "rgba(14,159,110,.65)";
+      if (choice === "nay") fill = "rgba(225,29,72,.60)";
+      if (choice === "abstain") fill = "rgba(180,83,9,.55)";
+
+      ctx.beginPath();
+      ctx.arc(x, y, seatRadius, 0, Math.PI * 2);
+      ctx.fillStyle = fill;
+      ctx.fill();
+
+      // subtle outline
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(12,27,58,.10)";
+      ctx.stroke();
+    }
+  }
+
+  // little legend (top-left)
+  ctx.font = "12px ui-monospace, Menlo, Consolas, monospace";
+  ctx.fillStyle = "rgba(75,98,143,.95)";
+  ctx.fillText("AYE", 10, 16);
+  ctx.fillText("NAY", 10, 34);
+  ctx.fillText("ABS", 10, 52);
+  ctx.fillText("—", 10, 70);
+
+  ctx.fillStyle = "rgba(14,159,110,.65)"; ctx.fillRect(52, 7, 18, 12);
+  ctx.fillStyle = "rgba(225,29,72,.60)";  ctx.fillRect(52, 25, 18, 12);
+  ctx.fillStyle = "rgba(180,83,9,.55)";   ctx.fillRect(52, 43, 18, 12);
+  ctx.fillStyle = "rgba(12,27,58,.18)";   ctx.fillRect(52, 61, 18, 12);
+}
+
+// ----- actions -----
 async function cast(choice) {
-  if (!state.activeResolution || state.activeResolution.status !== "open") return;
+  if (state.role !== "member") return;
   try {
     await api("cast_vote", { choice });
-    speak(`Vote received: ${state.representative} — ${choice.toUpperCase()}.`);
+    speak(`Vote recorded: ${choice.toUpperCase()}.`);
   } catch (e) {
     speak(`Vote rejected: ${e.message}`, true);
   }
@@ -423,12 +463,10 @@ async function startVote() {
   const title = ui.pTitle.value.trim();
   const summary = ui.pSummary.value.trim();
   const body = ui.pBody.value.trim();
-
   if (!title || !body) {
     setError(ui.presErr, "Provide at least a title and full resolution text.");
     return;
   }
-
   try {
     await api("start_vote", { title, summary, body });
     speak("Voting procedure initiated.", true);
@@ -450,33 +488,24 @@ async function endVote() {
   }
 }
 
+// ----- polling -----
 async function pollOnce() {
   const data = await api("get_state", {});
   state.activeResolution = data.resolution || { status: "idle" };
-
-  if (data.hello) setPill(ui.pillConn, "LINK", data.hello);
-
-  // if vote just closed -> we immediately clear UI (since backend now blanks fields + votes)
-  const curStatus = state.activeResolution?.status || "idle";
-  if (state.lastStatus !== curStatus) {
-    state.lastStatus = curStatus;
-    if (curStatus === "closed") {
-      speak("Vote closed. Clearing live view.", true);
-    }
-  }
+  state.seatCount = data.seatCount || state.seatCount || 0;
 
   setResolutionUI(state.activeResolution);
   setActionsVisibility(state.activeResolution);
 
-  const order = data.countriesOrder || [];
-  setLedger(data.votes || {}, order);
+  const votes = data.votes || {};
+  setLedger(votes, state.seatCount);
 
   updateElapsed(state.activeResolution);
 
   ui.ledgerSub.textContent =
     state.activeResolution?.status === "open"
-      ? "Live feed. Updates automatically."
-      : "No active vote.";
+      ? `Live seat positions • Total seats: ${state.seatCount}`
+      : `No active vote • Total seats: ${state.seatCount}`;
 }
 
 function startPolling() {
@@ -487,6 +516,25 @@ function startPolling() {
   }, CONFIG.POLL_MS);
 }
 
+// ----- heartbeat (keeps seat session alive) -----
+async function heartbeat() {
+  if (state.role !== "member") return;
+  if (!state.seatId || !state.seatSessionToken) return;
+  try {
+    const out = await api("heartbeat", {});
+    if (!out.ok) return;
+  } catch {
+    // if seat session expires, we’ll just stop voting ability; user can re-claim
+  }
+}
+
+function startHeartbeat() {
+  if (state.hbTimer) clearInterval(state.hbTimer);
+  heartbeat().catch(()=>{});
+  state.hbTimer = setInterval(() => heartbeat().catch(()=>{}), CONFIG.HEARTBEAT_MS);
+}
+
+// ----- clock -----
 function tickClock() {
   const d = new Date(nowMs());
   const hh = String(d.getHours()).padStart(2,"0");
@@ -497,19 +545,22 @@ function tickClock() {
 setInterval(tickClock, 500);
 tickClock();
 
+// ----- boot -----
 (function boot() {
   ui.buildInfo.textContent = `build: ${window.location.host}`;
   setPill(ui.pillConn, "LINK", "negotiating…");
   setPill(ui.pillRole, "ROLE", "unknown");
-  setPill(ui.pillCountry, "ID", "unbound");
+  setPill(ui.pillSeat, "SEAT", "unbound");
 
   speak("Welcome to the OFN Internal Representative Platform.");
   speak("Please provide your access phrase.");
 
-  ui.btnAuth.addEventListener("click", handleAuth);
-  ui.pw.addEventListener("keydown", (e) => { if (e.key === "Enter") handleAuth(); });
+  ui.btnAuth.addEventListener("click", () => handleAuth().catch(e => setError(ui.authErr, e.message)));
+  ui.pw.addEventListener("keydown", (e) => { if (e.key === "Enter") ui.btnAuth.click(); });
 
-  ui.btnBind.addEventListener("click", handleBind);
+  ui.btnSeat.addEventListener("click", () => claimSeat().catch(e => setError(ui.seatErr, e.message)));
+  ui.btnRelease.addEventListener("click", () => releaseSeat().catch(e => setError(ui.seatErr, e.message)));
+
   ui.btnEnter.addEventListener("click", enterDesktop);
 
   ui.btnAye.addEventListener("click", () => cast("aye"));
@@ -518,6 +569,11 @@ tickClock();
 
   ui.btnStart.addEventListener("click", startVote);
   ui.btnEnd.addEventListener("click", endVote);
+
+  window.addEventListener("resize", () => {
+    // redraw chamber at current votes
+    // (poll will redraw soon anyway)
+  });
 
   showAuth();
 })();
