@@ -3,15 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>OFN — Member Terminal</title>
+  <title>OFN — Representative Platform</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 
-<body>
+<body class="authMode">
   <div id="bg">
-    <div class="grain"></div>
-    <div class="scanlines"></div>
-    <div class="glow"></div>
+    <div class="softGrid"></div>
+    <div class="cornerGlow"></div>
   </div>
 
   <main class="shell">
@@ -21,7 +20,7 @@
         <div class="sigil"></div>
         <div>
           <div class="brandTitle">Organisation of Free Nations</div>
-          <div class="brandSub">Secure Representative Terminal • OFN/RT-7</div>
+          <div class="brandSub">Internal Representative Platform • IRP/1</div>
         </div>
       </div>
       <div class="statusPills">
@@ -33,71 +32,79 @@
 
     <section class="desktop">
 
-      <!-- LEFT: System dialog / onboarding -->
+      <!-- AUTH / ONBOARDING -->
       <aside class="panel dialog">
         <div class="panelHeader">
-          <div class="dot"></div><div class="dot"></div><div class="dot"></div>
-          <div class="panelTitle">SYSTEM INTERFACE</div>
+          <div class="panelTitle">WELCOME</div>
         </div>
 
         <div class="panelBody">
-          <div class="systemVoice" id="systemVoice">
-            <div class="voiceLine">…initializing secure session…</div>
-          </div>
+          <div class="systemVoice" id="systemVoice"></div>
 
-          <!-- Step 1: Password -->
-          <div class="card" id="cardAuth">
-            <div class="cardTitle">Authentication</div>
+          <!-- Step 1: Password (big, centered look via CSS authMode) -->
+          <div class="card hero" id="cardAuth">
+            <div class="cardTitle">Enter Access Phrase</div>
             <div class="cardHint">
-              This terminal accepts pre-issued credentials only.
-              <span class="muted">No heroics. No guessing. I’m very petty about guessing.</span>
+              This platform is reserved for authorised delegations.
+              <span class="muted">If you’re not authorised, please enjoy the feeling of being extremely unauthorised.</span>
             </div>
 
             <label class="fieldLabel" for="pw">Access Phrase</label>
             <div class="row">
-              <input id="pw" class="input" type="password" placeholder="Enter access phrase…" autocomplete="off" />
+              <input id="pw" class="input" type="password" placeholder="Type your access phrase…" autocomplete="off" />
               <button id="btnAuth" class="btn primary">Verify</button>
             </div>
 
-            <div class="small muted">
-              Access tiers: Observer / Member / Presidency
-            </div>
-
+            <div class="small muted">Observer • Member • Presidency</div>
             <div class="error" id="authErr" hidden></div>
           </div>
 
-          <!-- Step 2: Country selection (not for presidency) -->
-          <div class="card" id="cardIdentity" hidden>
-            <div class="cardTitle">Identity Binding</div>
+          <!-- Step 2: Country + Representative -->
+          <div class="card hero" id="cardIdentity" hidden>
+            <div class="cardTitle">Bind Session Identity</div>
             <div class="cardHint" id="identityHint">
               Hello Representative! May I know what country you are representing today?
             </div>
 
-            <label class="fieldLabel" for="countrySelect">Country</label>
+            <label class="fieldLabel" for="countrySelect">Country / Delegation</label>
             <div class="row">
               <select id="countrySelect" class="input select"></select>
               <button id="btnBind" class="btn primary">Bind</button>
             </div>
 
+            <div id="repRow" class="repRow" hidden>
+              <label class="fieldLabel" for="repSelect">Representative Slot</label>
+              <select id="repSelect" class="input select">
+                <option>Rep 1</option>
+                <option>Rep 2</option>
+                <option>Rep 3</option>
+                <option>Rep 4</option>
+                <option>Rep 5</option>
+              </select>
+              <div class="small muted">
+                Each representative slot may cast its own vote.
+              </div>
+            </div>
+
             <div class="error" id="bindErr" hidden></div>
           </div>
 
-          <!-- Step 3: Enter terminal -->
-          <div class="card" id="cardEnter" hidden>
+          <!-- Step 3: Enter -->
+          <div class="card hero" id="cardEnter" hidden>
             <div class="cardTitle">Session Ready</div>
             <div class="cardHint">
-              Identity confirmed. Welcome to the voting floor.
-              <span class="muted">Try not to spill democracy on the carpet.</span>
+              Identity confirmed. You may enter the platform.
+              <span class="muted">Please do not attempt to “speedrun” diplomacy.</span>
             </div>
-            <button id="btnEnter" class="btn primary wide">Enter Secure Desktop</button>
+            <button id="btnEnter" class="btn primary wide">Enter Platform</button>
           </div>
         </div>
       </aside>
 
-      <!-- RIGHT: Voting Desktop -->
+      <!-- WORKSPACE -->
       <section class="panel workspace" id="workspace" hidden>
         <div class="panelHeader">
-          <div class="panelTitle">REPRESENTATIVE DESKTOP</div>
+          <div class="panelTitle">VOTING DESKTOP</div>
           <div class="headerRight">
             <div class="clock" id="clock">--:--:--</div>
           </div>
@@ -105,7 +112,7 @@
 
         <div class="panelBody grid">
 
-          <!-- Current Vote -->
+          <!-- Active Vote -->
           <div class="tile vote">
             <div class="tileHeader">
               <div>
@@ -133,8 +140,7 @@
 
             <div class="actionsRow" id="observerActions" hidden>
               <div class="muted small">
-                Observer access detected. You may monitor the proceedings.
-                <span class="muted">Touch nothing. Especially not history.</span>
+                Observer access. Monitoring only.
               </div>
             </div>
           </div>
@@ -144,13 +150,13 @@
             <div class="tileHeader">
               <div>
                 <div class="tileTitle">Vote Ledger</div>
-                <div class="tileSub" id="ledgerSub">Per-country status feed.</div>
+                <div class="tileSub" id="ledgerSub">Per-country representative votes.</div>
               </div>
               <div class="counts">
                 <div class="count"><span class="k">Aye</span> <span class="v" id="cAye">0</span></div>
                 <div class="count"><span class="k">Nay</span> <span class="v" id="cNay">0</span></div>
                 <div class="count"><span class="k">Abst</span> <span class="v" id="cAbs">0</span></div>
-                <div class="count"><span class="k">Total</span> <span class="v" id="cTot">0</span></div>
+                <div class="count"><span class="k">Cast</span> <span class="v" id="cTot">0</span></div>
               </div>
             </div>
 
@@ -162,7 +168,7 @@
             <div class="tileHeader">
               <div>
                 <div class="tileTitle">Presidency Console</div>
-                <div class="tileSub">Compose, initiate, and terminate voting procedures.</div>
+                <div class="tileSub">Create, open, and close votes.</div>
               </div>
               <div class="pill warn" id="voteStatePill">STATE: idle</div>
             </div>
@@ -171,12 +177,12 @@
             <input id="pTitle" class="input" placeholder="e.g. Resolution 12 — Maritime Security Cooperation" />
 
             <label class="fieldLabel" for="pSummary">Short Informative Summary</label>
-            <textarea id="pSummary" class="input area" rows="2" placeholder="One or two lines. Clear. Surgical."></textarea>
+            <textarea id="pSummary" class="input area" rows="2" placeholder="One or two lines. Clear and neutral."></textarea>
 
             <label class="fieldLabel" for="pBody">Resolution Text</label>
             <textarea id="pBody" class="input area" rows="6" placeholder="Write the full resolution text here…"></textarea>
 
-            <div class="row gap">
+            <div class="row gap stickyActions">
               <button class="btn primary" id="btnStart">Start Vote</button>
               <button class="btn danger" id="btnEnd">End Vote</button>
             </div>
@@ -192,7 +198,7 @@
             <div class="tileHeader">
               <div>
                 <div class="tileTitle">System Feed</div>
-                <div class="tileSub">Behavioral hints & procedural commentary.</div>
+                <div class="tileSub">Platform notices & procedural commentary.</div>
               </div>
             </div>
             <div class="feedList" id="feedList"></div>
@@ -204,7 +210,7 @@
     </section>
 
     <footer class="bottombar">
-      <div class="muted small">OFN/RT-7 • Unauthorized access will be met with polite disappointment.</div>
+      <div class="muted small">OFN IRP • Internal use only.</div>
       <div class="muted small" id="buildInfo">build: local</div>
     </footer>
 
