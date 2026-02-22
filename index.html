@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>OFN — Representative Platform</title>
+  <title>OFN — Internal Representative Platform</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 
@@ -14,19 +14,18 @@
   </div>
 
   <main class="shell">
-
     <header class="topbar">
       <div class="brand">
         <div class="sigil"></div>
         <div>
           <div class="brandTitle">Organisation of Free Nations</div>
-          <div class="brandSub">Internal Representative Platform • IRP/1</div>
+          <div class="brandSub">Internal Representative Platform • IRP/Parliament</div>
         </div>
       </div>
       <div class="statusPills">
         <div class="pill" id="pillConn">LINK: <span class="muted">negotiating…</span></div>
         <div class="pill" id="pillRole">ROLE: <span class="muted">unknown</span></div>
-        <div class="pill" id="pillCountry">ID: <span class="muted">unbound</span></div>
+        <div class="pill" id="pillSeat">SEAT: <span class="muted">unbound</span></div>
       </div>
     </header>
 
@@ -45,46 +44,39 @@
           <div class="card hero" id="cardAuth">
             <div class="cardTitle">Enter Access Phrase</div>
             <div class="cardHint">
-              This platform is reserved for authorised delegations.
-              <span class="muted">If you’re not authorised, please enjoy the feeling of being extremely unauthorised.</span>
+              This platform is reserved for authorised participants.
+              <span class="muted">Unauthorised access attempts will be met with… administrative disappointment.</span>
             </div>
 
             <label class="fieldLabel" for="pw">Access Phrase</label>
             <div class="row">
-              <input id="pw" class="input" type="password" placeholder="Type your access phrase…" autocomplete="off" />
+              <input id="pw" class="input" type="password" placeholder="Type access phrase…" autocomplete="off" />
               <button id="btnAuth" class="btn primary">Verify</button>
             </div>
 
-            <div class="small muted">Observer • Member • Presidency</div>
             <div class="error" id="authErr" hidden></div>
           </div>
 
-          <!-- Step 2: Country + Representative -->
-          <div class="card hero" id="cardIdentity" hidden>
-            <div class="cardTitle">Bind Session Identity</div>
-            <div class="cardHint" id="identityHint">
-              Hello Representative! May I know what country you are representing today?
+          <!-- Step 2: Seat selection (members only) -->
+          <div class="card hero" id="cardSeat" hidden>
+            <div class="cardTitle">Seat Binding</div>
+            <div class="cardHint" id="seatHint">
+              Please select your parliament seat for this session.
             </div>
 
-            <label class="fieldLabel" for="countrySelect">Country / Delegation</label>
+            <label class="fieldLabel" for="seatSelect">Seat</label>
             <div class="row">
-              <select id="countrySelect" class="input select"></select>
-              <button id="btnBind" class="btn primary">Bind</button>
+              <select id="seatSelect" class="input select"></select>
+              <button id="btnSeat" class="btn primary">Claim</button>
             </div>
 
-            <div id="repRow" class="repRow" hidden>
-              <label class="fieldLabel" for="repSelect">Representative Slot</label>
-              <select id="repSelect" class="input select">
-                <option>Rep 1</option>
-                <option>Rep 2</option>
-                <option>Rep 3</option>
-                <option>Rep 4</option>
-                <option>Rep 5</option>
-              </select>
-              <div class="small muted">Each representative slot may cast its own vote.</div>
+            <div class="small muted" id="seatMeta">Seats available: —</div>
+            <div class="row gap" style="margin-top:10px">
+              <button id="btnRelease" class="btn" type="button">Release my seat</button>
+              <div class="small muted">Release is useful when switching devices/tabs.</div>
             </div>
 
-            <div class="error" id="bindErr" hidden></div>
+            <div class="error" id="seatErr" hidden></div>
           </div>
 
           <!-- Step 3: Enter -->
@@ -92,10 +84,10 @@
             <div class="cardTitle">Session Ready</div>
             <div class="cardHint">
               Identity confirmed. You may enter the platform.
-              <span class="muted">Please do not attempt to “speedrun” diplomacy.</span>
             </div>
             <button id="btnEnter" class="btn primary wide">Enter Platform</button>
           </div>
+
         </div>
       </aside>
 
@@ -141,12 +133,12 @@
             </div>
           </div>
 
-          <!-- Ledger -->
+          <!-- Ledger + Chamber -->
           <div class="tile ledger">
             <div class="tileHeader">
               <div>
-                <div class="tileTitle">Vote Ledger</div>
-                <div class="tileSub" id="ledgerSub">Per-country representative votes.</div>
+                <div class="tileTitle">Parliament Chamber</div>
+                <div class="tileSub" id="ledgerSub">Live seat positions.</div>
               </div>
               <div class="counts">
                 <div class="count"><span class="k">Aye</span> <span class="v" id="cAye">0</span></div>
@@ -156,10 +148,15 @@
               </div>
             </div>
 
+            <div class="chamberWrap">
+              <canvas id="chamberCanvas" width="900" height="260"></canvas>
+              <div class="small muted">Each dot is a seat. Colors reflect votes.</div>
+            </div>
+
             <div class="ledgerList" id="ledgerList"></div>
           </div>
 
-          <!-- Presidency Console (ONLY for presidency; spans full width) -->
+          <!-- Presidency Console (only presidency; spans full width) -->
           <div class="tile presidency" id="presidencyTile" hidden>
             <div class="tileHeader">
               <div>
@@ -176,7 +173,7 @@
             <textarea id="pSummary" class="input area" rows="2" placeholder="One or two lines. Clear and neutral."></textarea>
 
             <label class="fieldLabel" for="pBody">Resolution Text</label>
-            <textarea id="pBody" class="input area" rows="8" placeholder="Write the full resolution text here…"></textarea>
+            <textarea id="pBody" class="input area" rows="10" placeholder="Write the full resolution text here…"></textarea>
 
             <div class="row gap stickyActions">
               <button class="btn primary" id="btnStart">Start Vote</button>
@@ -184,7 +181,7 @@
             </div>
 
             <div class="error" id="presErr" hidden></div>
-            <div class="small muted">Ending a vote posts results to Discord and locks further voting.</div>
+            <div class="small muted">Ending a vote posts results to Discord and resets the chamber for the next vote.</div>
           </div>
 
         </div>
@@ -196,7 +193,6 @@
       <div class="muted small">OFN IRP • Internal use only.</div>
       <div class="muted small" id="buildInfo">build: local</div>
     </footer>
-
   </main>
 
   <script src="app.js"></script>
