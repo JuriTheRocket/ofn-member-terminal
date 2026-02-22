@@ -41,7 +41,7 @@
         <div class="panelBody">
           <div class="systemVoice" id="systemVoice"></div>
 
-          <!-- Step 1: Password (big, centered look via CSS authMode) -->
+          <!-- Step 1: Password -->
           <div class="card hero" id="cardAuth">
             <div class="cardTitle">Enter Access Phrase</div>
             <div class="cardHint">
@@ -81,9 +81,7 @@
                 <option>Rep 4</option>
                 <option>Rep 5</option>
               </select>
-              <div class="small muted">
-                Each representative slot may cast its own vote.
-              </div>
+              <div class="small muted">Each representative slot may cast its own vote.</div>
             </div>
 
             <div class="error" id="bindErr" hidden></div>
@@ -139,9 +137,7 @@
             </div>
 
             <div class="actionsRow" id="observerActions" hidden>
-              <div class="muted small">
-                Observer access. Monitoring only.
-              </div>
+              <div class="muted small">Observer access. Monitoring only.</div>
             </div>
           </div>
 
@@ -163,7 +159,7 @@
             <div class="ledgerList" id="ledgerList"></div>
           </div>
 
-          <!-- Presidency Console -->
+          <!-- Presidency Console (ONLY for presidency; spans full width) -->
           <div class="tile presidency" id="presidencyTile" hidden>
             <div class="tileHeader">
               <div>
@@ -180,7 +176,7 @@
             <textarea id="pSummary" class="input area" rows="2" placeholder="One or two lines. Clear and neutral."></textarea>
 
             <label class="fieldLabel" for="pBody">Resolution Text</label>
-            <textarea id="pBody" class="input area" rows="6" placeholder="Write the full resolution text here…"></textarea>
+            <textarea id="pBody" class="input area" rows="8" placeholder="Write the full resolution text here…"></textarea>
 
             <div class="row gap stickyActions">
               <button class="btn primary" id="btnStart">Start Vote</button>
@@ -188,20 +184,7 @@
             </div>
 
             <div class="error" id="presErr" hidden></div>
-            <div class="small muted">
-              Ending a vote posts results to Discord and locks further voting.
-            </div>
-          </div>
-
-          <!-- System Feed -->
-          <div class="tile feed">
-            <div class="tileHeader">
-              <div>
-                <div class="tileTitle">System Feed</div>
-                <div class="tileSub">Platform notices & procedural commentary.</div>
-              </div>
-            </div>
-            <div class="feedList" id="feedList"></div>
+            <div class="small muted">Ending a vote posts results to Discord and locks further voting.</div>
           </div>
 
         </div>
