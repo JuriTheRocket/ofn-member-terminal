@@ -94,6 +94,15 @@ async function setResolutionClosed(supabase, resolutionId) {
   if (error) throw error;
 }
 
+async function clearVotesForResolution(supabase, resolutionId) {
+  const { error } = await supabase
+    .from("votes")
+    .delete()
+    .eq("resolution_id", resolutionId);
+
+  if (error) throw error;
+}
+
 async function postDiscord(webhookUrl, payload) {
   if (!webhookUrl) return false;
   const res = await fetch(webhookUrl, {
@@ -128,14 +137,30 @@ export async function handler(event) {
 
     if (action === "get_state") {
       const resolution = await getActiveResolution(supabase);
-      const votes = await getVotesMap(supabase, resolution?.id);
 
       const members = (process.env.MEMBER_COUNTRIES || "")
         .split("|").map(s => s.trim()).filter(Boolean);
       const observers = (process.env.OBSERVER_COUNTRIES || "")
         .split("|").map(s => s.trim()).filter(Boolean);
-
       const countriesOrder = [...members, ...observers];
+
+      // ✅ If closed: blank fields + no votes (UI resets immediately)
+      if (resolution?.status === "closed") {
+        return json(200, {
+          hello: "secure",
+          serverNowMs: Date.now(),
+          resolution: {
+            ...resolution,
+            title: "",
+            summary: "",
+            body: "",
+          },
+          votes: {},
+          countriesOrder,
+        });
+      }
+
+      const votes = await getVotesMap(supabase, resolution?.id);
 
       return json(200, {
         hello: "secure",
@@ -159,6 +184,8 @@ export async function handler(event) {
       const current = await getActiveResolution(supabase);
       if (current?.status === "open") {
         await setResolutionClosed(supabase, current.id);
+        // also clear votes just in case
+        await clearVotesForResolution(supabase, current.id);
       }
 
       const insert = {
@@ -205,7 +232,6 @@ export async function handler(event) {
         updated_at: new Date().toISOString(),
       };
 
-      // Requires the new constraint unique(resolution_id, country, representative)
       const { error } = await supabase
         .from("votes")
         .upsert(upsert, { onConflict: "resolution_id,country,representative" });
@@ -222,8 +248,7 @@ export async function handler(event) {
       if (!current?.id) return json(409, { error: "No vote exists to end." });
       if (current.status !== "open") return json(409, { error: "Vote already closed." });
 
-      await setResolutionClosed(supabase, current.id);
-
+      // Gather final votes BEFORE clearing
       const votes = await getVotesMap(supabase, current.id);
 
       const members = (process.env.MEMBER_COUNTRIES || "")
@@ -260,6 +285,12 @@ export async function handler(event) {
 
       const discordWebhook = process.env.DISCORD_WEBHOOK_URL || "";
       const discordPosted = await postDiscord(discordWebhook, { content });
+
+      // ✅ Close resolution
+      await setResolutionClosed(supabase, current.id);
+
+      // ✅ After webhook attempt, wipe votes so next resolution is clean
+      await clearVotesForResolution(supabase, current.id);
 
       return json(200, { ok: true, discordPosted });
     }
